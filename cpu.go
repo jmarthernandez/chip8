@@ -33,6 +33,8 @@ CPU contains state of the emulated machine
 type CPU struct {
 	Opcode uint16
 	Memory [4096]byte
+	GFX    [64 * 32]byte
+	Key    [16]byte
 	V      [16]byte
 	I      uint16
 	PC     uint16
@@ -40,6 +42,7 @@ type CPU struct {
 	DT     byte
 	ST     byte
 	Stack  [16]uint16
+	DF     byte
 }
 
 // NewCPU returns a new CPU struct with default options and loads the fontset
@@ -70,6 +73,42 @@ func (c *CPU) LoadRom(r []byte) {
 	for i, b := range r {
 		c.Memory[i+0x200] = b
 	}
+}
+
+// Run kicks off our emulator
+func (c *CPU) Run() {
+	c.SetupGFX()
+	c.SetupInput()
+	fmt.Printf("START: 0x%X\n", c.Opcode)
+	for m := 0; m < 12; m++ {
+		c.SetOpcode()
+		fmt.Printf("BEFORE EXECUTION: 0x%X\n", c.Opcode)
+		c.ExecuteOpcode()
+		// If the draw flag is set, update the screen
+		if c.DF == 1 {
+			drawGraphics()
+		}
+		// Store key press state (Press and Release)
+		c.SetKeys()
+	}
+
+}
+
+func drawGraphics() {}
+
+// SetupGFX sets up graphics
+func (c *CPU) SetupGFX() {
+
+}
+
+// SetupInput sets up input
+func (c *CPU) SetupInput() {
+
+}
+
+// SetKeys sets up input
+func (c *CPU) SetKeys() {
+
 }
 
 /*
@@ -130,6 +169,7 @@ y - A 4-bit value, the upper 4 bits of the low byte of the instruction
 kk or byte - An 8-bit value, the lowest 8 bits of the instruction
 */
 func (c *CPU) ExecuteOpcode() {
+	fmt.Printf("DEBUG: 0x%X\n", c.Opcode&0xF000)
 	switch c.Opcode & 0xF000 {
 	case 0x0000:
 		switch c.Opcode {
@@ -157,6 +197,7 @@ func (c *CPU) ExecuteOpcode() {
 	case 0x1000:
 		// Jump to location nnn.
 		// The interpreter sets the program counter to nnn.
+		fmt.Printf("JUMP TO: 0x%X\n", c.Opcode&0x0FFF)
 		c.PC = c.Opcode & 0x0FFF
 		break
 	case 0x2000:
@@ -253,7 +294,7 @@ func (c *CPU) ExecuteOpcode() {
 			// than 8 bits (i.e., > 255,) VF is set to 1, otherwise 0. Only the lowest
 			// 8 bits of the result are kept, and stored in Vx.
 			c.V[x] = c.V[x] + c.V[y]
-			c.V[0xF] = ternary(c.V[x] > 255)
+			c.V[0xF] = ternary(c.V[x] > 0xFF)
 			c.PC += 2
 			break
 		case 0x8005:
@@ -324,7 +365,7 @@ func (c *CPU) ExecuteOpcode() {
 		// instruction 8xy2 for more information on AND.
 		x := xNib(c.Opcode)
 		kk := byte(c.Opcode)
-		r := byte(rand.Intn(255))
+		r := byte(rand.Intn(0xFF))
 		c.V[x] = kk & r
 		c.PC += 2
 		break
@@ -363,6 +404,7 @@ func (c *CPU) ExecuteOpcode() {
 			//  \__\___/ \__,_|\___/
 			break
 		case 0xE0A1:
+			// Skip next instruction if key with the value of Vx is not pressed.
 			fmt.Printf("Not Implemented [0x0000]: 0x%X\n", c.Opcode)
 			//  _            _
 			// | |_ ___   __| | ___
@@ -427,12 +469,11 @@ func (c *CPU) ExecuteOpcode() {
 			// The interpreter takes the decimal value of Vx, and places the hundreds
 			// digit in memory at location in I, the tens digit at location I+1,
 			// and the ones digit at location I+2.
-			fmt.Printf("Not Implemented [0x0000]: 0x%X\n", c.Opcode)
-			//  _            _
-			// | |_ ___   __| | ___
-			// | __/ _ \ / _` |/ _ \
-			// | || (_) | (_| | (_) |
-			//  \__\___/ \__,_|\___/
+			vx := c.V[xNib(c.Opcode)]
+			c.Memory[c.I] = vx / 100
+			c.Memory[c.I+1] = (vx / 10) % 10
+			c.Memory[c.I+2] = (vx % 100) % 10
+			c.PC += 2
 			break
 		case 0xF055:
 			// Store registers V0 through Vx in memory starting at location I.
@@ -454,6 +495,7 @@ func (c *CPU) ExecuteOpcode() {
 		}
 	default:
 		fmt.Printf("Unknown opcode: 0x%X\n", c.Opcode)
+		break
 	}
 }
 
